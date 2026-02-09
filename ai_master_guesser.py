@@ -3,43 +3,80 @@ from openai import OpenAI
 import random
 
 # ==============================================================================
-# 1. 响应式 UI 架构：PC 与 iPhone 双端深度适配
+# 1. 响应式 UI 架构：深度锁定赛博蓝
 # ==============================================================================
 st.set_page_config(page_title="AI 猜猜看", layout="centered", initial_sidebar_state="collapsed")
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
-bg, txt, glow_c = "#000000", "#F2F2F7", "10, 132, 255"
+# 核心颜色：赛博蓝 (0, 210, 255)
+bg, txt, glow_c = "#000000", "#F2F2F7", "0, 210, 255"
 
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {bg}; color: {txt} !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }}
-    .block-container {{
-        padding-top: max(1.2rem, env(safe-area-inset-top)) !important;
-        padding-bottom: 11rem !important;
-        max-width: 800px !important;
+    /* 强制锁定背景与文字 */
+    .stApp {{ 
+        background-color: {bg} !important; 
+        color: {txt} !important; 
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
     }}
-    header {{ display: none !important; }}
     
-    /* 聊天气泡文字颜色加亮 */
+    /* 呼吸灯动画 */
+    @keyframes breathe {{
+        0% {{ box-shadow: 0 0 4px rgba({glow_c}, 0.2); border-color: rgba({glow_c}, 0.3); }}
+        50% {{ box-shadow: 0 0 15px rgba({glow_c}, 0.6); border-color: rgba({glow_c}, 0.8); }}
+        100% {{ box-shadow: 0 0 4px rgba({glow_c}, 0.2); border-color: rgba({glow_c}, 0.3); }}
+    }}
+
+    /* === 按钮样式重置：解决变红问题 === */
+    div.stButton > button {{
+        background-color: rgba(28, 28, 30, 0.8) !important;
+        color: #00D2FF !important; /* 强制赛博蓝 */
+        border: 1px solid rgba({glow_c}, 0.3) !important;
+        border-radius: 12px !important;
+        height: 44px !important;
+        font-weight: 600 !important;
+        transition: 0.3s all !important;
+    }}
+    
+    /* 悬停与点击态 */
+    div.stButton > button:hover {{
+        border-color: #00D2FF !important;
+        color: #FFFFFF !important;
+        background-color: rgba({glow_c}, 0.1) !important;
+    }}
+
+    /* 启动按钮专用高亮 */
+    div.stButton > button[kind="primary"] {{
+        background-color: rgba({glow_c}, 0.15) !important;
+        border: 2px solid #00D2FF !important;
+        box-shadow: 0 0 15px rgba({glow_c}, 0.4) !important;
+        animation: breathe 2.5s infinite ease-in-out !important;
+        color: #FFFFFF !important;
+    }}
+
+    /* 聊天气泡：修复颜色与发光 */
     div[data-testid="stMarkdownContainer"] p {{ color: #FFFFFF !important; font-size: 16px !important; }}
-    .stChatMessage {{ background-color: #1C1C1E !important; border-radius: 18px !important; margin-bottom: 8px !important; }}
+    .stChatMessage {{ 
+        background-color: #1C1C1E !important; 
+        border-radius: 18px !important; 
+        border: 0.5px solid rgba({glow_c}, 0.2) !important;
+        margin-bottom: 8px !important; 
+    }}
     
-    /* 输入框适配 */
+    /* 输入框：磨砂玻璃 */
     .stChatInput {{
-        position: fixed !important;
-        bottom: 0 !important;
-        padding-bottom: calc(15px + env(safe-area-inset-bottom)) !important;
         background: rgba(10, 10, 10, 0.85) !important;
         backdrop-filter: blur(20px) !important;
         -webkit-backdrop-filter: blur(20px) !important;
-        z-index: 999;
+        border-top: 0.5px solid rgba(255,255,255,0.1) !important;
     }}
 
-    /* 手机端按钮横排适配 */
+    /* 移动端横向 4 按钮强制适配 */
     @media only screen and (max-width: 600px) {{
         [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap !important; gap: 5px !important; }}
         [data-testid="column"] {{ flex: 1 !important; min-width: 0 !important; }}
         div.stButton > button {{ font-size: 12px !important; padding: 0 !important; }}
+        header {{ display: none !important; }}
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -64,7 +101,6 @@ client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net
 
 def ask_ai(inp=None, is_hidden=False):
     if inp:
-        # 将消息存入列表，并打上 hidden 标签
         st.session_state.msgs.append({"role": "user", "content": inp, "hidden": is_hidden})
         if not is_hidden: st.session_state.count += 1
     
@@ -72,7 +108,7 @@ def ask_ai(inp=None, is_hidden=False):
         sys_prompt = "侦探身份。直接问第一个是非题，严禁废话。确定答案回复：答案是：[人名]。"
     else:
         if not st.session_state.seed_category:
-            st.session_state.seed_category = random.choice(["好莱坞巨星", "动漫主角", "历史伟人", "超级英雄", "顶流歌手"])
+            st.session_state.seed_category = random.choice(["电影明星", "动漫主角", "历史伟人", "超级英雄", "顶流歌手"])
         sys_prompt = (
             f"主持身份。目标：【{st.session_state.seed_category}】。\n"
             "指令：收到‘提示’或‘线索’词时，直接给具体描述，禁止回‘是/否’。猜中回复：🎉 恭喜你，答对了！真相是：[人名]。"
@@ -89,11 +125,10 @@ def ask_ai(inp=None, is_hidden=False):
             elif inp and "认输" in str(inp): st.session_state.over, st.session_state.win = True, False
         except Exception as e: st.error(f"Error: {str(e)}")
 
-# 处理 Pending
 if st.session_state.pending:
     payload = st.session_state.pending; st.session_state.pending = None
-    # 点击提示或开局指令时，设置 is_hidden=True
-    hide_it = "提示" in payload or "线索" in payload or "第一个提示" in payload
+    # 彻底解决点击提示时的重复对话框问题
+    hide_it = any(x in payload for x in ["提示", "线索", "第一个提示"])
     ask_ai(payload, is_hidden=hide_it); st.rerun()
 
 # ==============================================================================
@@ -126,10 +161,9 @@ if not st.session_state.started:
         st.rerun()
 
 else:
-    # --- 核心改进：渲染时检查 hidden 标记 ---
+    # 渲染时过滤隐藏消息，保持界面纯净
     for m in st.session_state.msgs:
-        if m.get("hidden", False): continue  # 如果是隐藏消息，直接跳过不显示
-        
+        if m.get("hidden", False): continue 
         with st.chat_message(m["role"], avatar="🤖" if m["role"]=="assistant" else "👤"):
             st.markdown(m["content"])
 
