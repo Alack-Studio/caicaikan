@@ -3,7 +3,7 @@ from openai import OpenAI
 import random
 
 # ==============================================================================
-# 1. PC & iPhone 15 Pro 双端适配 UI
+# 1. 响应式 UI 架构：PC & iPhone 15 Pro 深度适配
 # ==============================================================================
 st.set_page_config(page_title="AI 猜猜看", layout="centered", initial_sidebar_state="collapsed")
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
@@ -12,7 +12,7 @@ bg, txt, glow_c = "#000000", "#F2F2F7", "10, 132, 255"
 
 st.markdown(f"""
     <style>
-    .stApp {{ background-color: {bg} !important; color: {txt} !important; font-family: -apple-system, sans-serif; }}
+    .stApp {{ background-color: {bg} !important; color: {txt} !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }}
     
     /* 适配灵动岛与底部 Home 条 */
     .block-container {{
@@ -33,7 +33,7 @@ st.markdown(f"""
         box-shadow: 0 0 15px rgba(0, 210, 255, 0.4) !important; color: #FFFFFF !important;
     }}
 
-    /* 修复文字看不清与输入框适配 */
+    /* 气泡与输入框适配 */
     div[data-testid="stMarkdownContainer"] p {{ color: #FFFFFF !important; font-size: 16px !important; }}
     .stChatMessage {{ background-color: #1C1C1E !important; border-radius: 18px !important; border: 0.5px solid rgba(0, 210, 255, 0.2) !important; }}
     .stChatInput {{ 
@@ -54,28 +54,42 @@ st.markdown(f"""
 st.title("🕵️ AI 猜猜看")
 
 # ==============================================================================
-# 2. 状态初始化与逻辑引擎
+# 2. 状态初始化
 # ==============================================================================
 if "msgs" not in st.session_state:
     st.session_state.update({"msgs":[], "role":"AI 猜", "started":False, "over":False, "win":False, "model":"gemini-2.5-flash-lite", "count":0, "pending":None, "seed_category":""})
 
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
 
+# ==============================================================================
+# 3. 核心逻辑引擎 [重点修复区域]
+# ==============================================================================
 def ask_ai(inp=None, is_hidden=False):
     if inp:
         st.session_state.msgs.append({"role": "user", "content": inp, "hidden": is_hidden})
         if not is_hidden: st.session_state.count += 1
     
+    # --- AI 猜模式 (AI是侦探) ---
     if st.session_state.role == "AI 猜":
-        sys_prompt = "侦探身份。直接问第一个是非题，严禁废话。确定答案回复：答案是：[人名]。"
-    else:
-        # 加固指令：解决开局只答“是”的 Bug
-        if not st.session_state.seed_category:
-            st.session_state.seed_category = random.choice(["超级英雄", "好莱坞明星", "动漫主角", "历史伟人", "流行歌手"])
         sys_prompt = (
-            f"主持身份。你已选定：【{st.session_state.seed_category}】。\n"
-            "【逻辑锁定】若收到唤醒词'第一个提示'，必须给出具体描述，禁止只回'是/否'。\n"
-            "后续用户提问，你只答'是/否/模糊'。猜中回复：🎉 恭喜你，答对了！真相是：[人名]。"
+            "身份：你是一个正在玩'20个问题'的侦探。你的目标是猜出用户心中想的一个大众名人。\n"
+            "规则：\n"
+            "1. 第一句话必须直接问第一个是非题（例如：'是现实中的人物吗？'）。\n"
+            "2. 严禁使用任何开场白（如'好的'、'那我们开始'）。\n"
+            "3. 确定答案时回复：'答案是：[人名]'。"
+        )
+    
+    # --- 我猜模式 (AI是主持人) [修复重点] ---
+    else:
+        if not st.session_state.seed_category:
+            st.session_state.seed_category = random.choice(["超级英雄", "好莱坞巨星", "动漫主角", "历史伟人", "顶流歌手"])
+            
+        sys_prompt = (
+            f"身份：金牌游戏主持人。你已选定目标：【{st.session_state.seed_category}】。\n"
+            "【核心逻辑分支】：\n"
+            "1. **分支A（索要提示）**：如果用户输入包含'提示'、'线索'或'开始'，你必须输出一段关于该人物的**描述性线索**。在此情况下，**绝对禁止**回答'是'或'否'。\n"
+            "2. **分支B（用户提问）**：如果用户是在猜测特征（带问号），你只能回答：'是'、'否' 或 '模糊'。\n"
+            "3. **分支C（猜中）**：如果用户猜中名字，回复：🎉 恭喜你，答对了！真相是：[人名]。"
         )
 
     with st.spinner("..."):
@@ -85,19 +99,21 @@ def ask_ai(inp=None, is_hidden=False):
             reply = res.choices[0].message.content
             st.session_state.msgs.append({"role":"assistant", "content":reply, "hidden": False})
             
+            # 判赢逻辑
             if any(k in reply for k in ["答案是", "恭喜", "真相是"]):
                 st.session_state.over = True
                 st.session_state.win = not (inp and "认输" in str(inp))
         except Exception as e: st.error(f"Error: {str(e)}")
 
-# 处理按钮点击与隐藏对话框
+# 处理 Pending 按钮逻辑
 if st.session_state.pending:
     payload = st.session_state.pending; st.session_state.pending = None
+    # 自动识别是否为“提示”类指令，如果是，则隐藏气泡
     hide_it = any(x in payload for x in ["提示", "线索", "第一个提示"])
     ask_ai(payload, is_hidden=hide_it); st.rerun()
 
 # ==============================================================================
-# 3. 界面渲染 (锁定经典文案)
+# 4. 界面渲染 (锁定经典文案)
 # ==============================================================================
 if not st.session_state.started:
     st.markdown("### 🎭 模式选择")
@@ -141,7 +157,7 @@ else:
         else:
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                if st.button("💡 提示"): st.session_state.pending = "请给我新线索。"; st.rerun()
+                if st.button("💡 提示"): st.session_state.pending = "请给我新线索，不要回答是或否。"; st.rerun()
             with c2:
                 if st.button("🙅 猜不到"): st.session_state.pending = "我认输，揭晓答案。"; st.rerun()
             with c3:
@@ -152,11 +168,13 @@ else:
                     st.rerun()
             with c4:
                 if st.button("🏠 菜单"): st.session_state.update({"started":False, "msgs":[], "over":False}); st.rerun()
+            
             user_input = st.chat_input("输入推理提问...")
             if user_input: ask_ai(user_input); st.rerun()
     else:
         if st.session_state.win: st.balloons(); st.success(f"🎯 成功！消耗 {st.session_state.count} 轮")
         else: st.snow(); st.error("❄️ 推理结束")
+        
         b1, b2 = st.columns(2)
         with b1:
             if st.button("🎮 换个人重新猜", use_container_width=True, type="primary"):
