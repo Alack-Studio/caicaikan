@@ -8,50 +8,23 @@ import random
 st.set_page_config(page_title="AI 猜猜看", layout="centered", initial_sidebar_state="collapsed")
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
-# OLED 纯黑背景
 bg, txt, glow_c = "#000000", "#F2F2F7", "10, 132, 255"
 
 st.markdown(f"""
     <style>
-    /* 全局基础设置 */
-    .stApp {{ 
-        background-color: {bg}; 
-        color: {txt} !important; 
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        -webkit-font-smoothing: antialiased;
-    }}
-    
-    /* 内容区域自适应适配 */
+    .stApp {{ background-color: {bg}; color: {txt} !important; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }}
     .block-container {{
         padding-top: max(1.2rem, env(safe-area-inset-top)) !important;
         padding-bottom: 11rem !important;
-        max-width: 800px !important; /* PC端限制宽度，手机端自动填满 */
+        max-width: 800px !important;
     }}
-    
     header {{ display: none !important; }}
     
-    /* 通用按钮样式 */
-    div.stButton > button {{
-        background-color: #1C1C1E !important;
-        color: #0A84FF !important;
-        border: 1px solid rgba(255,255,255,0.1) !important;
-        border-radius: 12px !important;
-        height: 44px !important;
-        font-weight: 600 !important;
-        transition: 0.2s all;
-    }}
-    
-    div.stButton > button[kind="primary"] {{
-        background-color: #0A84FF !important;
-        color: #FFFFFF !important;
-        border: none !important;
-    }}
-
-    /* 聊天气泡：修复颜色看不清 */
+    /* 聊天气泡文字颜色加亮 */
     div[data-testid="stMarkdownContainer"] p {{ color: #FFFFFF !important; font-size: 16px !important; }}
     .stChatMessage {{ background-color: #1C1C1E !important; border-radius: 18px !important; margin-bottom: 8px !important; }}
     
-    /* 输入框：iOS Safari 磨砂玻璃适配 */
+    /* 输入框适配 */
     .stChatInput {{
         position: fixed !important;
         bottom: 0 !important;
@@ -61,21 +34,12 @@ st.markdown(f"""
         -webkit-backdrop-filter: blur(20px) !important;
         z-index: 999;
     }}
-    
-    /* === 📱 手机端专用补丁 (Max-Width 600px) === */
+
+    /* 手机端按钮横排适配 */
     @media only screen and (max-width: 600px) {{
-        [data-testid="stHorizontalBlock"] {{
-            flex-wrap: nowrap !important; /* 强制功能键不换行 */
-            gap: 5px !important;
-        }}
-        [data-testid="column"] {{
-            flex: 1 !important;
-            min-width: 0 !important;
-        }}
-        div.stButton > button {{
-            font-size: 12px !important; /* 手机端缩小字号确保并列 */
-            padding: 0 !important;
-        }}
+        [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap !important; gap: 5px !important; }}
+        [data-testid="column"] {{ flex: 1 !important; min-width: 0 !important; }}
+        div.stButton > button {{ font-size: 12px !important; padding: 0 !important; }}
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -83,7 +47,7 @@ st.markdown(f"""
 st.title("🕵️ AI 猜猜看")
 
 # ==============================================================================
-# 2. 状态与逻辑
+# 2. 状态管理
 # ==============================================================================
 default_states = {
     "msgs": [], "role": "AI 猜", "started": False, "over": False, 
@@ -93,21 +57,25 @@ default_states = {
 for k, v in default_states.items():
     if k not in st.session_state: st.session_state[k] = v
 
+# ==============================================================================
+# 3. 核心逻辑引擎
+# ==============================================================================
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
 
-def ask_ai(inp=None, hidden_trigger=False):
+def ask_ai(inp=None, is_hidden=False):
     if inp:
-        st.session_state.msgs.append({"role": "user", "content": inp, "hidden": hidden_trigger})
-        if not hidden_trigger: st.session_state.count += 1
+        # 将消息存入列表，并打上 hidden 标签
+        st.session_state.msgs.append({"role": "user", "content": inp, "hidden": is_hidden})
+        if not is_hidden: st.session_state.count += 1
     
     if st.session_state.role == "AI 猜":
-        sys_prompt = "侦探身份。猜用户想的名人。首句直接提问。猜中回复：答案是：[人名]。"
+        sys_prompt = "侦探身份。直接问第一个是非题，严禁废话。确定答案回复：答案是：[人名]。"
     else:
         if not st.session_state.seed_category:
-            st.session_state.seed_category = random.choice(["电影明星", "动漫主角", "历史伟人", "超级英雄", "顶流歌手"])
+            st.session_state.seed_category = random.choice(["好莱坞巨星", "动漫主角", "历史伟人", "超级英雄", "顶流歌手"])
         sys_prompt = (
             f"主持身份。目标：【{st.session_state.seed_category}】。\n"
-            "指令：收到‘提示’相关词时，必须给具体线索句，禁止仅回是/否。猜中回复：🎉 恭喜你，答对了！真相是：[人名]。"
+            "指令：收到‘提示’或‘线索’词时，直接给具体描述，禁止回‘是/否’。猜中回复：🎉 恭喜你，答对了！真相是：[人名]。"
         )
 
     with st.spinner("..."):
@@ -115,20 +83,24 @@ def ask_ai(inp=None, hidden_trigger=False):
             api_msgs = [{"role": m["role"], "content": m["content"]} for m in st.session_state.msgs]
             res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys_prompt}] + api_msgs, temperature=0.7)
             reply = res.choices[0].message.content
-            st.session_state.msgs.append({"role":"assistant", "content":reply})
+            st.session_state.msgs.append({"role":"assistant", "content":reply, "hidden": False})
+            
             if any(k in reply for k in ["答案是", "恭喜", "真相是"]): st.session_state.over, st.session_state.win = True, True
             elif inp and "认输" in str(inp): st.session_state.over, st.session_state.win = True, False
         except Exception as e: st.error(f"Error: {str(e)}")
 
+# 处理 Pending
 if st.session_state.pending:
     payload = st.session_state.pending; st.session_state.pending = None
-    ask_ai(payload, hidden_trigger=(payload == "请直接给我第一个提示。")); st.rerun()
+    # 点击提示或开局指令时，设置 is_hidden=True
+    hide_it = "提示" in payload or "线索" in payload or "第一个提示" in payload
+    ask_ai(payload, is_hidden=hide_it); st.rerun()
 
 # ==============================================================================
-# 3. 响应式界面布局
+# 4. 界面渲染
 # ==============================================================================
 if not st.session_state.started:
-    st.markdown("### 🎭 模式选择") # 经典文案
+    st.markdown("### 🎭 模式选择")
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🤖 AI 猜 (它问我答)", use_container_width=True, type="primary" if st.session_state.role=="AI 猜" else "secondary"):
@@ -144,18 +116,20 @@ if not st.session_state.started:
         with m_cols[i]:
             if st.button(m_key.replace("gemini-",""), use_container_width=True, type="primary" if st.session_state.model == m_key else "secondary"):
                 st.session_state.model = m_key; st.rerun()
-            st.markdown(f'<p class="model-desc" style="font-size:0.7rem; color:#8E8E93; text-align:center;">{m_desc}</p>', unsafe_allow_html=True)
+            st.markdown(f'<p style="font-size:0.7rem; color:#8E8E93; text-align:center;">{m_desc}</p>', unsafe_allow_html=True)
             
     st.write("---")
     if st.button("🚀 开始推理", use_container_width=True, type="primary"):
         st.session_state.started = True
-        if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", hidden_trigger=True)
+        if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_hidden=True)
         else: ask_ai()
         st.rerun()
 
 else:
+    # --- 核心改进：渲染时检查 hidden 标记 ---
     for m in st.session_state.msgs:
-        if m.get("hidden", False): continue 
+        if m.get("hidden", False): continue  # 如果是隐藏消息，直接跳过不显示
+        
         with st.chat_message(m["role"], avatar="🤖" if m["role"]=="assistant" else "👤"):
             st.markdown(m["content"])
 
@@ -166,12 +140,13 @@ else:
             if c2.button("❌ 否"): ask_ai("否"); st.rerun()
             if c3.button("❔ 模糊"): ask_ai("不确定"); st.rerun()
         else:
-            # 移动端横向 4 按钮，PC 端自适应
             c1, c2, c3, c4 = st.columns(4)
             with c1:
-                if st.button("💡 提示"): st.session_state.pending = "请给我新线索，别废话。"; st.rerun()
+                if st.button("💡 提示"): 
+                    st.session_state.pending = "请给我新线索，别废话。"; st.rerun()
             with c2:
-                if st.button("🙅 猜不到"): st.session_state.pending = "我认输，揭晓答案。"; st.rerun()
+                if st.button("🙅 猜不到"): 
+                    st.session_state.pending = "我认输，揭晓答案。"; st.rerun()
             with c3:
                 if st.button("🔄 换个人"):
                     st.session_state.msgs, st.session_state.count, st.session_state.seed_category = [], 0, ""
@@ -179,7 +154,9 @@ else:
                     else: ask_ai()
                     st.rerun()
             with c4:
-                if st.button("🏠 菜单"): st.session_state.started, st.session_state.msgs, st.session_state.over = False, [], False; st.rerun()
+                if st.button("🏠 菜单"): 
+                    st.session_state.started, st.session_state.msgs, st.session_state.over = False, [], False; st.rerun()
+            
             user_input = st.chat_input("输入推理提问...")
             if user_input: ask_ai(user_input); st.rerun()
     else:
@@ -189,8 +166,9 @@ else:
         with b1:
             if st.button("🎮 换个人重新猜", use_container_width=True, type="primary"):
                 st.session_state.msgs, st.session_state.over, st.session_state.win, st.session_state.count, st.session_state.seed_category = [], False, False, 0, ""
-                if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", hidden_trigger=True)
+                if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_hidden=True)
                 else: ask_ai()
                 st.rerun()
         with b2:
-            if st.button("🏠 返回选关画面", use_container_width=True): st.session_state.started, st.session_state.msgs, st.session_state.over = False, [], False; st.rerun()
+            if st.button("🏠 返回选关画面", use_container_width=True): 
+                st.session_state.started, st.session_state.msgs, st.session_state.over = False, [], False; st.rerun()
