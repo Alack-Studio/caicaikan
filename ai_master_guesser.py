@@ -2,7 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import random
 
-# 1. 极致赛博 UI：保留呼吸灯效果
+# 1. 赛博深夜 UI：呼吸灯效果与选关布局
 st.set_page_config(page_title="赛博侦探", layout="centered")
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
@@ -44,7 +44,7 @@ st.markdown(f"""
 
 st.title("🕵️ AI 猜猜看")
 
-# 2. 核心逻辑：解决提示重复与反馈缺失
+# 2. 核心逻辑：解决选人重复 & 增强随机性
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
 
 def ask_ai(inp=None, is_start_trigger=False):
@@ -54,16 +54,15 @@ def ask_ai(inp=None, is_start_trigger=False):
     
     with st.spinner("深度检索中..."):
         if st.session_state.role == "AI 猜":
-            sys = "你是一个猜谜专家。我心里想一个著名人物，你通过是非题来猜。请直接开始第一个问题，不要说废话。"
+            sys = "你是一个猜谜专家。我心里想一个著名人物，你通过是非题来猜。直接开始第一个问题，不要废话。"
         else:
-            # 解决复读与空洞提示的核心指令
-            sys = ("你已选定一个世界著名的现实或虚拟人物。用户提问你答'是/否/模糊'。"
-                   "【提示规则】当收到提示请求时，必须给出具体、有实义、且不与历史重复的信息（如：性别、形象是只猫、拿过诺贝尔奖等）。"
-                   "【首条规则】第一条消息请直接给出模糊分类提示，如'这个人是虚拟的'。"
-                   "【胜利规则】如果用户猜对了名字，你必须回复'恭喜你，答对了！'并给出简介。")
+            # 解决选人重复的核心指令
+            sys = ("你已选定一个世界著名的角色。要求：绝对禁止连续挑选大众化角色（如爱因斯坦、周杰伦等）。"
+                   "请从‘体育竞技、冷门历史、硬核科技、二次元动漫、经典文学’中随机切换领域挑选人物。"
+                   "用户提问你答'是/否/模糊'。提示需具体且不复读。用户猜中即回复'恭喜你，答对了！'。")
             
         try:
-            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.8)
+            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.9)
             reply = res.choices[0].message.content
             st.session_state.msgs.append({"role":"assistant", "content":reply})
             
@@ -79,9 +78,8 @@ if st.session_state.pending:
     st.session_state.pending = None
     ask_ai(ans); st.rerun()
 
-# 3. 界面渲染
+# 3. 选关画面
 if not st.session_state.msgs:
-    # ... (此处保持之前的模式与模型选择界面代码一致)
     st.write("---")
     st.markdown("### 🎭 模式选择")
     m_col1, m_col2 = st.columns(2)
@@ -91,7 +89,7 @@ if not st.session_state.msgs:
     with m_col2:
         if st.button("我猜 (我问它答)", use_container_width=True, type="primary" if st.session_state.role=="我猜" else "secondary"):
             st.session_state.role = "我猜"; st.rerun()
-    # 模型选择
+    
     st.write("")
     st.markdown("### 🔮 选择 Gemini 模型")
     descs = {"gemini-2.5-flash-lite": "⚡ 极速响应", "gemini-2.5-pro": "🧠 逻辑专家", "gemini-3-pro-preview": "🔥 究极核心"}
@@ -110,7 +108,6 @@ if not st.session_state.msgs:
         else: ask_ai()
         st.rerun()
 else:
-    # 对话流展示
     for m in st.session_state.msgs:
         if m["content"] == "请直接给我第一个提示。": continue
         with st.chat_message(m["role"], avatar="🕵️" if m["role"]=="assistant" else "👤"):
@@ -127,11 +124,10 @@ else:
             qc1, qc2, qc3, qc4 = st.columns([0.18, 0.22, 0.22, 0.38])
             with qc1: 
                 if st.button("💡 提示"): 
-                    st.session_state.pending = f"请提供一个关于性别、形象或成就的新提示，不要重复。"; st.rerun()
+                    st.session_state.pending = "请提供一个新的提示，避开之前提过的信息。"; st.rerun()
             with qc2: 
                 if st.button("🙅 猜不到"): st.session_state.pending = "我想不出来了，请直接揭晓答案。"; st.rerun()
             with qc3: 
-                # 换个人：原地重置
                 if st.button("🔄 换个人"): 
                     st.session_state.msgs, st.session_state.over, st.session_state.win, st.session_state.count = [], False, False, 0
                     if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_start_trigger=True)
@@ -140,7 +136,6 @@ else:
             q = st.chat_input("输入你的推理提问...")
             if q: ask_ai(q); st.rerun()
     else:
-        # 胜利气球 vs 失败雪花
         if st.session_state.win: st.balloons()
         else: st.snow()
         st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>{"🎯 推理成功" if st.session_state.win else "❄️ 挑战结束"}</h3><p>本次推理消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
