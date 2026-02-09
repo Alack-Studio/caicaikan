@@ -50,7 +50,7 @@ client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net
 
 def ask_ai(inp=None):
     if inp: st.session_state.msgs.append({"role": "user", "content": inp})
-    sys = "你是一个顶级读心者。我心里想一个著名人物，你通过是非题来猜。严禁前5轮询问性别或国籍。一次一问带问号。确定后以'答案是：[人名]'开头。"
+    sys = "你是一个顶级读心者。我心里想一个人物，你通过是非题来猜。一次一问带问号。确定后以'答案是：[人名]'开头。"
     
     try:
         res = client.chat.completions.create(
@@ -99,3 +99,4 @@ else:
     if st.button("🎮 再玩一局", use_container_width=True, type="primary"):
         st.session_state.msgs, st.session_state.over, st.session_state.count = [], False, 0
         st.rerun()
+
