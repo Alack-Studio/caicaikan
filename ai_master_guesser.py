@@ -1,121 +1,102 @@
 import streamlit as st
-import google.generativeai as genai
-import time
+from openai import OpenAI
 
 # ==========================================
-# 1. 页面配置
+# 1. 页面配置与状态初始化
 # ==========================================
 st.set_page_config(page_title="AI 读心神算子", page_icon="🔮", layout="centered")
 
-# ==========================================
-# 2. 状态全局初始化
-# ==========================================
-init_values = {
-    "chat_session": None,
-    "game_over": False,
-    "question_count": 0,
-    "error_msg": None,
-    "current_question": None
-}
-
-for key, value in init_values.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+if "messages" not in st.session_state:
+    st.session_state.messages = [] # 存储对话历史
+if "game_over" not in st.session_state:
+    st.session_state.game_over = False
+if "question_count" not in st.session_state:
+    st.session_state.question_count = 0
 
 # ==========================================
-# 3. API 配置与安全发送
+# 2. WildCard API 配置
 # ==========================================
-if "GEMINI_API_KEY" not in st.secrets:
-    st.error("🔑 请在 Streamlit 控制台配置 GEMINI_API_KEY")
+if "API_KEY" not in st.secrets:
+    st.error("🔑 请在 Streamlit Secrets 中配置 API_KEY")
     st.stop()
 
-API_KEY = "".join(st.secrets["GEMINI_API_KEY"].split())
-genai.configure(api_key=API_KEY)
+# WildCard 默认中转地址通常是 https://api.gptsapi.net/v1
+client = OpenAI(
+    api_key=st.secrets["API_KEY"],
+    base_url="https://api.gptsapi.net/v1" 
+)
 
-# 尝试使用最稳定的别名
-MODEL_NAME = 'models/gemini-flash-latest'
-model = genai.GenerativeModel(MODEL_NAME)
-
-def safe_send(chat, msg):
-    try:
-        response = chat.send_message(msg)
-        return response.text, None
-    except Exception as e:
-        err_msg = str(e)
-        if "429" in err_msg: return None, "LIMIT"
-        return None, err_msg
+# 使用 WildCard 支持的模型，建议用 gpt-4o-mini，速度极快且聪明
+MODEL_NAME = "gpt-4o-mini"
 
 # ==========================================
-# 4. 核心逻辑处理
+# 3. 核心交互函数
 # ==========================================
-def handle_user_choice(ans_text):
-    st.session_state.question_count += 1
-    res, err = safe_send(st.session_state.chat_session, ans_text)
+def get_ai_response(user_input=None):
+    if user_input:
+        st.session_state.messages.append({"role": "user", "content": user_input})
     
-    if err == "LIMIT":
-        st.session_state.question_count -= 1
-        st.session_state.error_msg = "⏰ AI 思考过度，请等待 15 秒再点击。"
-    elif err:
-        st.session_state.error_msg = f"❌ 逻辑中断: {err}"
-    else:
-        st.session_state.current_question = res
-        st.session_state.error_msg = None
-        # 结束判定
-        has_q = "?" in res or "？" in res
-        is_guess = any(w in res for w in ["猜", "名字是", "答案是", "他是"])
-        if not has_q or is_guess:
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[
+                {"role": "system", "content": "你是一个专业的读心神算子。我心里想一个著名人物，你只能问是非题（是/否/不确定）来猜他是谁。一次只问一个问题。当你确定答案时，请直接给出结果。"},
+                *st.session_state.messages
+            ],
+            temperature=0.7
+        )
+        ai_reply = response.choices[0].message.content
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        
+        # 判定逻辑
+        has_q = "?" in ai_reply or "？" in ai_reply
+        if not has_q or any(w in ai_reply for w in ["猜到了", "答案是", "他是"]):
             st.session_state.game_over = True
+            
+    except Exception as e:
+        st.error(f"❌ API 调用失败: {e}")
 
 # ==========================================
-# 5. 界面渲染
+# 4. 界面渲染
 # ==========================================
-st.title("🕵️ AI 读心神算子")
+st.title("🕵️ AI 读心神算子 (WildCard 版)")
 
 # 侧边栏
 with st.sidebar:
-    st.header("📊 实时状态")
-    st.write(f"步数：{st.session_state.question_count}")
-    if st.button("🔄 强制重置游戏", use_container_width=True):
+    st.write(f"当前进度：第 {st.session_state.question_count + 1} 步")
+    if st.button("🔄 重新开始"):
         for k in list(st.session_state.keys()): del st.session_state[k]
         st.rerun()
 
-# --- 关键修复：处理启动时的连接 ---
-if st.session_state.chat_session is None or st.session_state.current_question is None:
-    st.info("🔮 正在尝试唤醒 AI 大脑...")
-    if st.button("🚀 点击开始连接"):
-        with st.spinner("正在穿越时空..."):
-            st.session_state.chat_session = model.start_chat(history=[])
-            prompt = "你现在是一个读心神算子。我心里想一个著名人物。你问是非题猜他是谁。请开始第一问。"
-            res, err = safe_send(st.session_state.chat_session, prompt)
-            if err == "LIMIT":
-                st.error("⚠️ 启动失败：API 频率限制。请等待 60 秒后再试。")
-            elif err:
-                st.error(f"⚠️ 连接失败：{err}")
-            else:
-                st.session_state.current_question = res
-                st.rerun()
-    st.stop()
+# 首次启动
+if not st.session_state.messages:
+    with st.spinner("🔮 正在连接 WildCard 节点..."):
+        get_ai_response()
 
-# 正常游戏界面
-if st.session_state.error_msg:
-    st.warning(st.session_state.error_msg)
-
+# 游戏进行中
 if not st.session_state.game_over:
-    st.chat_message("assistant", avatar="🔮").write(st.session_state.current_question)
+    # 显示 AI 的最新提问
+    last_ai_msg = [m for m in st.session_state.messages if m["role"] == "assistant"][-1]["content"]
+    st.chat_message("assistant", avatar="🔮").write(last_ai_msg)
+    
     st.divider()
     
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.button("✅ 是的", on_click=handle_user_choice, args=("是的",), use_container_width=True, type="primary")
-    with c2:
-        st.button("❌ 不是", on_click=handle_user_choice, args=("不是",), use_container_width=True)
-    with c3:
-        st.button("❔ 不确定", on_click=handle_user_choice, args=("不确定",), use_container_width=True)
+    def on_click(ans):
+        st.session_state.question_count += 1
+        get_ai_response(ans)
 
+    c1, c2, c3 = st.columns(3)
+    with c1: st.button("✅ 是的", on_click=on_click, args=("是的",), use_container_width=True, type="primary")
+    with c2: st.button("❌ 不是", on_click=on_click, args=("不是",), use_container_width=True)
+    with c3: st.button("❔ 不确定", on_click=on_click, args=("不确定",), use_container_width=True)
+
+# 游戏结束
 else:
     st.balloons()
-    st.success("🎯 AI 锁定了答案！")
-    st.chat_message("assistant", avatar="🎯").write(st.session_state.current_question)
+    final_reply = st.session_state.messages[-1]["content"]
+    st.success("🎯 AI 已经给出了最终答案！")
+    st.chat_message("assistant", avatar="🎯").write(final_reply)
+    
     if st.button("🎮 挑战下一局", use_container_width=True, type="primary"):
         for k in list(st.session_state.keys()): del st.session_state[k]
         st.rerun()
