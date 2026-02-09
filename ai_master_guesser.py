@@ -2,8 +2,8 @@ import streamlit as st
 from openai import OpenAI
 import random
 
-# 1. 赛博选关 UI：高亮锁定与极致精致感
-st.set_page_config(page_title="赛博侦探", layout="centered")
+# 1. UI 增强：经典文案与赛博发光布局
+st.set_page_config(page_title="AI 猜猜看", layout="centered")
 
 # 强制隐藏侧边栏
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
@@ -13,7 +13,7 @@ states = {"msgs":[], "role":"AI 猜", "over":False, "model":"gemini-2.5-flash-li
 for k, v in states.items():
     if k not in st.session_state: st.session_state[k] = v
 
-# 锁定赛博深夜色彩方案
+# 赛博深夜色彩方案
 bg, txt, glow_c = "#121212", "#D1D1D1", "0, 210, 255"
 
 st.markdown(f"""
@@ -53,7 +53,7 @@ st.markdown(f"""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🕵️ 赛博侦探")
+st.title("🕵️ AI 猜猜看")
 
 # 2. 核心逻辑
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
@@ -64,25 +64,25 @@ def ask_ai(inp=None):
         st.session_state.count += 1
     with st.spinner("正在启动推理引擎..."):
         if st.session_state.role == "AI 猜":
-            sys = "你是一个猜谜助手。我心里想一个人物，你通过是非题来猜。严禁前5轮询问性别或国籍。确定后以'答案是：[人名]'开头。"
+            sys = "你是一个猜谜助手。我心里想一个著名人物，你通过是非题来猜。严禁前5轮询问性别或国籍。确定后以'答案是：[人名]'开头。"
         else:
-            sys = "你已选定一个名人。用户问是非题，你仅答'是/否/模糊'并附带简短提示。严禁人设描述。第一条消息直接给出分类提示。认输即揭晓。"
+            sys = "你已选定一个世界著名人物。用户问是非题，你仅答'是/否/模糊'并附带简短提示。严禁进行任何角色扮演。首条消息直接给出分类提示。用户认输时直接公布答案。"
         try:
             res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.7)
             reply = res.choices[0].message.content
             st.session_state.msgs.append({"role":"assistant", "content":reply})
             if any(x in reply for x in ["答案是", "获胜", "真相是", "揭晓"]): st.session_state.over = True
-        except Exception as e: st.error(f"📡 终端异常: {str(e)}")
+        except Exception as e: st.error(f"📡 API 异常: {str(e)}")
 
 if st.session_state.pending:
     ans = st.session_state.pending
     st.session_state.pending = None
     ask_ai(ans); st.rerun()
 
-# 3. 选关画面渲染
+# 3. 选关界面：还原经典文案
 if not st.session_state.msgs:
     st.write("---")
-    st.markdown("### 🎭 任务模式")
+    st.markdown("### 🎭 模式选择") # 还原以前的标题
     m_col1, m_col2 = st.columns(2)
     with m_col1:
         if st.button("AI 猜 (读心模式)", use_container_width=True, type="primary" if st.session_state.role=="AI 猜" else "secondary"):
@@ -92,11 +92,11 @@ if not st.session_state.msgs:
             st.session_state.role = "我猜"; st.rerun()
             
     st.write("")
-    st.markdown("### 📡 接入逻辑核心")
+    st.markdown("### 🔮 挑战对象") # 还原以前的标题
     descs = {
         "gemini-2.5-flash-lite": "⚡ 极速响应<br>适合连续快速对弈",
         "gemini-2.5-pro": "🧠 逻辑专家<br>擅长解构复杂线索",
-        "gemini-3-pro-preview": "🔥 究极核心<br>顶级推演直觉"
+        "gemini-3-pro-preview": "🔥 究极核心<br>拥有顶级推演直觉"
     }
     models, mod_cols = list(descs.keys()), st.columns(3)
     
@@ -126,6 +126,7 @@ else:
             if c2.button("❌ 否", use_container_width=True): st.session_state.pending = "不是"; st.rerun()
             if c3.button("❔ 模糊", use_container_width=True): st.session_state.pending = "不确定"; st.rerun()
         else:
+            # 快捷气泡保持左对齐
             qc1, qc2, qc3, qc4 = st.columns([0.18, 0.22, 0.22, 0.38])
             with qc1: 
                 if st.button("💡 提示"): st.session_state.pending = "请多给点提示。"; st.rerun()
@@ -135,11 +136,11 @@ else:
                 if st.button("🔄 重置"): 
                     st.session_state.msgs, st.session_state.count = [], 0
                     st.rerun()
-            q = st.chat_input("输入推理提问...")
+            q = st.chat_input("输入你的问题...")
             if q: ask_ai(q); st.rerun()
     else:
         st.balloons()
         st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>🎯 逻辑同步完成</h3><p>提问消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
-        if st.button("🎮 重置神经回路", use_container_width=True, type="primary"):
+        if st.button("🎮 开启新一轮挑战", use_container_width=True, type="primary"):
             st.session_state.msgs, st.session_state.over, st.session_state.count = [], False, 0
             st.rerun()
