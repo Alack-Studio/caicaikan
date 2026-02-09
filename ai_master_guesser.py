@@ -2,14 +2,14 @@ import streamlit as st
 from openai import OpenAI
 
 # ==========================================
-# 1. 顶级 UI 美化 (深色侦探风格)
+# 1. 顶级 UI 美化 (精致深色侦探风)
 # ==========================================
 st.set_page_config(page_title="Gemini 3 画影神探", page_icon="🕵️", layout="centered")
 
 st.markdown("""
     <style>
     .stApp { background: radial-gradient(circle at center, #1a1c2c 0%, #0d0e17 100%); color: #ffffff; }
-    /* 按钮样式：精致渐变 */
+    /* 精致渐变按钮 */
     div.stButton > button {
         border-radius: 12px;
         height: 3.5em;
@@ -44,7 +44,7 @@ for key, val in init_states.items():
 # ==========================================
 API_KEY = st.secrets.get("API_KEY", "")
 if not API_KEY:
-    st.error("🔑 请在 Streamlit Secrets 中配置 API_KEY")
+    st.error("🔑 请在 Secrets 中配置 API_KEY")
     st.stop()
 
 # 使用 WildCard 中转地址
@@ -72,11 +72,10 @@ def get_ai_response(user_input=None):
         st.session_state.messages.append({"role": "assistant", "content": reply})
         st.session_state.current_ai_reply = reply
         
-        # 判定游戏结束
+        # 判定结束：必须提问过一次且满足结束条件
         has_q = "?" in reply or "？" in reply
         guess_keywords = ["答案是", "我猜", "他是", "你是想说"]
         
-        # 必须至少提问过一次且满足结束条件
         if st.session_state.question_count > 0:
             if not has_q or any(w in reply for w in guess_keywords):
                 st.session_state.game_over = True
@@ -84,8 +83,36 @@ def get_ai_response(user_input=None):
     except Exception as e:
         st.error(f"🔮 维度连接波动: {e}")
 
-# 提取名字并生成简笔画
 def process_final_result(reply):
     try:
         # 1. 提取名字
         extract_res = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "只提取文本中的人名，不要多余文字。"}, 
+                {"role": "user", "content": reply}
+            ]
+        )
+        name = extract_res.choices[0].message.content.strip()
+        
+        # 2. 生成简笔画头像 (确保括号完全闭合)
+        img_res = client.images.generate(
+            model=IMAGE_MODEL,
+            prompt=f"Minimalist black line drawing avatar of {name}, pure white background, simple sketch style, hand-drawn contour lines, no color.",
+            size="1024x1024"
+        )
+        return name, img_res.data[0].url
+    except Exception as e:
+        st.warning(f"🎨 画像绘制失败: {e}")
+        return "神秘人物", None
+
+# ==========================================
+# 5. 界面渲染逻辑
+# ==========================================
+st.title("🕵️ Gemini 3：画影神探")
+
+with st.sidebar:
+    st.header("📊 侦测进度")
+    st.write(f"已推理步数：**{st.session_state.question_count}**")
+    if st.button("🔄 开启新局", use_container_width=True):
+        for k in list(st.
