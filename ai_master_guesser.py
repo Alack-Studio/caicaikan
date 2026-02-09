@@ -21,7 +21,6 @@ st.markdown(f"""
         100% {{ box-shadow: 0 0 4px rgba({glow_c}, 0.15); border-color: rgba({glow_c}, 0.3); }}
     }}
     .stApp {{ background-color: {bg}; color: {txt} !important; font-family: -apple-system, sans-serif; }}
-    
     div.stButton > button {{
         border-radius: 12px; height: 3.2em; font-size: 0.95rem !important;
         background-color: transparent; color: {txt} !important;
@@ -35,8 +34,9 @@ st.markdown(f"""
         color: #00D2FF !important; font-weight: bold;
     }}
     .stChatMessage {{ 
-        background-color: rgba(255,255,255,0.03) !important; border-radius: 10px; padding: 10px; 
-        border: 0.6px solid rgba({glow_c}, 0.3); margin-bottom: 8px; animation: breathe 4s infinite ease-in-out;
+        background-color: rgba(255,255,255,0.03) !important; border-radius: 10px; 
+        padding: 10px; border: 0.6px solid rgba({glow_c}, 0.3); margin-bottom: 8px; 
+        animation: breathe 4s infinite ease-in-out;
     }}
     header {{visibility: hidden;}}
     </style>
@@ -44,7 +44,7 @@ st.markdown(f"""
 
 st.title("🕵️ AI 猜猜看")
 
-# 2. 核心逻辑：解决选人重复 & 增强随机性
+# 2. 核心逻辑：修复认输误判
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
 
 def ask_ai(inp=None, is_start_trigger=False):
@@ -52,25 +52,26 @@ def ask_ai(inp=None, is_start_trigger=False):
         st.session_state.msgs.append({"role": "user", "content": inp})
         if not is_start_trigger: st.session_state.count += 1
     
-    with st.spinner("深度检索中..."):
+    with st.spinner("信号传输中..."):
         if st.session_state.role == "AI 猜":
-            sys = "你是一个猜谜专家。我心里想一个著名人物，你通过是非题来猜。直接开始第一个问题，不要废话。"
+            sys = "你是一个猜谜助手。我心里想一个著名人物，你通过是非题来猜。请直接开始第一个问题。"
         else:
-            # 解决选人重复的核心指令
-            sys = ("你已选定一个世界著名的角色。要求：绝对禁止连续挑选大众化角色（如爱因斯坦、周杰伦等）。"
-                   "请从‘体育竞技、冷门历史、硬核科技、二次元动漫、经典文学’中随机切换领域挑选人物。"
-                   "用户提问你答'是/否/模糊'。提示需具体且不复读。用户猜中即回复'恭喜你，答对了！'。")
+            # 强化认输时的指令限制
+            sys = ("你已选定一个名人。收到第一个提示请求时给出分类提示。"
+                   "随后答'是/否/模糊'并附带简短提示。严禁复读提示。"
+                   "【关键】如果用户说猜不到或认输，请直接揭晓答案，严禁回复'恭喜'或'答对了'。")
             
         try:
-            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.9)
+            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.7)
             reply = res.choices[0].message.content
             st.session_state.msgs.append({"role":"assistant", "content":reply})
             
-            # 判定胜利与结束
-            if "恭喜" in reply or "答对了" in reply:
-                st.session_state.over, st.session_state.win = True, True
-            elif any(x in reply for x in ["揭晓", "真相是", "公布答案"]):
+            # 逻辑判定：优先排除认输情况
+            if inp and "我想不出来了" in str(inp):
                 st.session_state.over, st.session_state.win = True, False
+            elif any(x in reply for x in ["恭喜", "答对了", "正确", "答案是", "真相是"]):
+                st.session_state.over = True
+                st.session_state.win = True
         except Exception as e: st.error(f"📡 API 异常: {str(e)}")
 
 if st.session_state.pending:
@@ -78,7 +79,7 @@ if st.session_state.pending:
     st.session_state.pending = None
     ask_ai(ans); st.rerun()
 
-# 3. 选关画面
+# 3. 界面渲染
 if not st.session_state.msgs:
     st.write("---")
     st.markdown("### 🎭 模式选择")
@@ -89,7 +90,7 @@ if not st.session_state.msgs:
     with m_col2:
         if st.button("我猜 (我问它答)", use_container_width=True, type="primary" if st.session_state.role=="我猜" else "secondary"):
             st.session_state.role = "我猜"; st.rerun()
-    
+            
     st.write("")
     st.markdown("### 🔮 选择 Gemini 模型")
     descs = {"gemini-2.5-flash-lite": "⚡ 极速响应", "gemini-2.5-pro": "🧠 逻辑专家", "gemini-3-pro-preview": "🔥 究极核心"}
@@ -107,6 +108,7 @@ if not st.session_state.msgs:
         if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_start_trigger=True)
         else: ask_ai()
         st.rerun()
+
 else:
     for m in st.session_state.msgs:
         if m["content"] == "请直接给我第一个提示。": continue
@@ -123,8 +125,7 @@ else:
         else:
             qc1, qc2, qc3, qc4 = st.columns([0.18, 0.22, 0.22, 0.38])
             with qc1: 
-                if st.button("💡 提示"): 
-                    st.session_state.pending = "请提供一个新的提示，避开之前提过的信息。"; st.rerun()
+                if st.button("💡 提示"): st.session_state.pending = "提示一下，比如性别、形象或者特点？"; st.rerun()
             with qc2: 
                 if st.button("🙅 猜不到"): st.session_state.pending = "我想不出来了，请直接揭晓答案。"; st.rerun()
             with qc3: 
@@ -133,12 +134,18 @@ else:
                     if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_start_trigger=True)
                     else: ask_ai()
                     st.rerun()
-            q = st.chat_input("输入你的推理提问...")
+            q = st.chat_input("输入提问...")
             if q: ask_ai(q); st.rerun()
     else:
         if st.session_state.win: st.balloons()
         else: st.snow()
-        st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>{"🎯 推理成功" if st.session_state.win else "❄️ 挑战结束"}</h3><p>本次推理消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
+        
+        # 统一文案为“推理结束”，并根据胜负显示不同图标
+        res_icon = "🎯" if st.session_state.win else "❄️"
+        res_text = "推理成功" if st.session_state.win else "推理结束"
+        
+        st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>{res_icon} {res_text}</h3><p>本次推理消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
+        
         if st.button("🎮 换个人重新猜", use_container_width=True, type="primary"):
             st.session_state.msgs, st.session_state.over, st.session_state.win, st.session_state.count = [], False, False, 0
             if st.session_state.role == "我猜": ask_ai("请直接给我第一个提示。", is_start_trigger=True)
