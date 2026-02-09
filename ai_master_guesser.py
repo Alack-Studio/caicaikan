@@ -3,110 +3,112 @@ import google.generativeai as genai
 import time
 
 # ==========================================
-# 1. 安全配置 (已针对云端优化)
+# 1. 核心配置与神秘感设置
 # ==========================================
+st.set_page_config(
+    page_title="AI 读心神算子",
+    page_icon="🕵️",
+    layout="centered"
+)
+
+# 自定义 CSS 装饰
+st.markdown("""
+    <style>
+    .main {
+        background-color: #0e1117;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 20px;
+        height: 3em;
+        transition: all 0.3s;
+    }
+    .stButton>button:hover {
+        transform: scale(1.05);
+        border-color: #ff4b4b;
+    }
+    .question-box {
+        background: linear-gradient(135deg, #1e1e2f 0%, #2d2d44 100%);
+        padding: 20px;
+        border-radius: 15px;
+        border-left: 5px solid #ff4b4b;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("❌ 未在 Secrets 中找到 GEMINI_API_KEY")
+    st.error("🔑 请在控制台配置 API Key")
     st.stop()
 
-# 自动清洗 Key 格式
 API_KEY = "".join(st.secrets["GEMINI_API_KEY"].split())
-
-try:
-    genai.configure(api_key=API_KEY)
-    # 使用你可用列表中最稳定的“最新版”别名
-    MODEL_NAME = 'models/gemini-flash-latest'
-    model = genai.GenerativeModel(MODEL_NAME)
-except Exception as e:
-    st.error(f"初始化失败: {e}")
-    st.stop()
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'models/gemini-flash-latest'
+model = genai.GenerativeModel(MODEL_NAME)
 
 # ==========================================
-# 2. 页面设置
+# 2. 辅助函数
 # ==========================================
-st.set_page_config(page_title="AI 读心神算子", page_icon="🕵️")
-st.title("🕵️ AI 读心神算子：稳定分发版")
-
-# ==========================================
-# 3. 核心函数：带频率保护的发送
-# ==========================================
-def safe_send_message(chat, message):
+def safe_send(chat, msg):
     try:
-        response = chat.send_message(message)
+        response = chat.send_message(msg)
         return response.text, None
     except Exception as e:
-        error_msg = str(e)
-        if "429" in error_msg:
-            return None, "QUOTA_EXCEEDED"
-        return None, error_msg
+        err = str(e)
+        if "429" in err: return None, "LIMIT"
+        return None, err
 
 # ==========================================
-# 4. 游戏状态初始化
+# 3. 侧边栏：规则与进度
+# ==========================================
+with st.sidebar:
+    st.title("🕵️ 读心屋说明")
+    st.markdown("""
+    1. 在心中想好一个**著名人物**（古今中外皆可）。
+    2. AI 会通过是非题来缩小范围。
+    3. 如果 AI 猜到了，请大方承认！
+    """)
+    st.divider()
+    if "question_count" in st.session_state:
+        st.write(f"📊 此时进度：**第 {st.session_state.question_count + 1} 步**")
+        # 模拟进度条，假设 20 步内猜出
+        progress = min(st.session_state.question_count / 20, 1.0)
+        st.progress(progress)
+    
+    if st.button("🔄 开启新局", type="secondary"):
+        for k in list(st.session_state.keys()): del st.session_state[k]
+        st.rerun()
+
+# ==========================================
+# 4. 游戏启动逻辑
 # ==========================================
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=[])
     st.session_state.game_over = False
     st.session_state.question_count = 0
-    st.session_state.current_question = ""
+    st.session_state.history_display = [] # 用于展示对话流
     
-    with st.spinner("🕵️ AI 正在构思线索..."):
-        prompt = (
-            "我们玩猜人物游戏。我心里想一个著名人物，你作为猜题者。 "
-            "规则：1. 只能问‘是/否’类问题。 2. 一次一个问题。 "
-            "3. 当你确定答案时，直接给出名字。请开始你的第一问。"
-        )
-        res_text, err = safe_send_message(st.session_state.chat_session, prompt)
-        
-        if err == "QUOTA_EXCEEDED":
-            st.warning("⏰ 访问太频繁啦！请等待 30 秒后刷新网页。")
-            st.stop()
-        elif err:
-            st.error(f"启动失败: {err}")
-            st.stop()
+    with st.status("🔮 正在穿越时空连接 AI 大脑...", expanded=True) as status:
+        prompt = "你现在是一个读心神算子。我心里想一个著名人物。你只能问是非题。请开始。"
+        res, err = safe_send(st.session_state.chat_session, prompt)
+        if res:
+            st.session_state.current_question = res
+            status.update(label="✅ 大脑已连接！请开始挑战。", state="complete")
         else:
-            st.session_state.current_question = res_text
+            st.error(f"连接失败: {err}")
+            st.stop()
 
 # ==========================================
-# 5. 界面交互
+# 5. 主交互界面
 # ==========================================
-with st.sidebar:
-    st.success(f"运行状态：已连接")
-    st.info(f"驱动引擎：{MODEL_NAME}")
-    if st.button("🔄 重新开始游戏"):
-        for k in list(st.session_state.keys()): del st.session_state[k]
-        st.rerun()
+st.header("🕵️ AI 读心神算子")
 
-if not st.session_state.get("game_over", False):
-    st.write(f"### 第 {st.session_state.question_count + 1} 问：")
-    st.info(st.session_state.current_question)
-
-    def on_click(ans):
-        st.session_state.question_count += 1
-        with st.spinner("AI 正在思考..."):
-            res_text, err = safe_send_message(st.session_state.chat_session, ans)
-            
-            if err == "QUOTA_EXCEEDED":
-                st.session_state.question_count -= 1
-                st.error("⚠️ 刚才那下‘超速’了。请等待 10 秒再点一次。")
-            elif err:
-                st.error(f"出错啦: {err}")
-            else:
-                st.session_state.current_question = res_text
-                # 判定结束逻辑：兼容中英文问号
-                has_q = "?" in res_text or "？" in res_text
-                if not has_q or any(w in res_text for w in ["猜", "名字是", "他是"]):
-                    st.session_state.game_over = True
-        st.rerun()
-
-    c1, c2, c3 = st.columns(3)
-    with c1: st.button("✅ 是的", use_container_width=True, type="primary", on_click=on_click, args=("是的",))
-    with c2: st.button("❌ 不是", use_container_width=True, on_click=on_click, args=("不是",))
-    with c3: st.button("❔ 不确定", use_container_width=True, on_click=on_click, args=("不确定",))
-
-else:
-    st.balloons()
-    st.success("🎯 **AI 锁定了最终答案！**")
-    st.markdown(f"### {st.session_state.current_question}")
-    if st.button("🎮 再玩一局", type="primary", use_container_width=True):
-        for k in list(st.session_state.keys()): del st.session_state[k]
-        st.rerun()
+if not st.session_state.game_over:
+    # 展示 AI 的问题
+    with st.chat_message("assistant", avatar="🔮"):
+        st.markdown(f"#### {st.session_state.current_question}")
+    
+    st.write("---")
+    st.caption("👇 请选择你的回答：")
+    
+    # 交互
