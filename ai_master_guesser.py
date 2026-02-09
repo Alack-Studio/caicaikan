@@ -1,14 +1,15 @@
 import streamlit as st
 from openai import OpenAI
 
-# 1. 极简精致 UI：标准字号、柔和投影
+# 1. 精致 UI 配置：标准字号、柔和投影
 st.set_page_config(page_title="AI 猜猜看", layout="centered")
 
 if "theme" not in st.session_state: st.session_state.theme = "白天"
 if "msgs" not in st.session_state: st.session_state.msgs = []
 if "over" not in st.session_state: st.session_state.over = False
 if "count" not in st.session_state: st.session_state.count = 0
-if "model" not in st.session_state: st.session_state.model = "gpt-4o"
+# 默认使用你列表中选中的那个
+if "model" not in st.session_state: st.session_state.model = "gemini-2.5-flash-lite"
 
 with st.sidebar:
     st.session_state.theme = st.radio("🌓 风格", ["白天", "夜晚"], horizontal=True)
@@ -25,7 +26,7 @@ else:
 st.markdown(f"""
     <style>
     .stApp {{ background-color: {bg}; color: {txt}; font-family: -apple-system, sans-serif; }}
-    /* 精致按钮：0.95rem 字体，3.0em 高度 */
+    /* 精致按钮：0.95rem 字体 */
     div.stButton > button {{
         border-radius: 8px; height: 3.0em; font-size: 0.95rem; font-weight: 500;
         border: 1px solid {b_bd}; background-color: {b_bg}; color: {b_txt};
@@ -51,41 +52,34 @@ def ask_ai(inp=None):
     if inp: st.session_state.msgs.append({"role": "user", "content": inp})
     sys = "你是一个顶级读心者。我心里想一个著名人物，你通过是非题来猜。严禁前5轮询问性别或国籍。一次一问带问号。确定后以'答案是：[人名]'开头。"
     
-    # 针对部分中转接口的 Gemini 命名修正
-    m_id = st.session_state.model
-    if "gemini" in m_id and not m_id.endswith("-latest"):
-        # 很多中转站更倾向于带上最新的后缀或特定格式
-        pass 
-
     try:
         res = client.chat.completions.create(
-            model=m_id, 
+            model=st.session_state.model, 
             messages=[{"role": "system", "content": sys}] + st.session_state.msgs,
             temperature=0.8
         )
         reply = res.choices[0].message.content
         st.session_state.msgs.append({"role": "assistant", "content": reply})
+        # 判定结束：无问号或包含答案前缀
         if st.session_state.count > 0 and ("?" not in reply and "？" not in reply or "答案是" in reply):
             st.session_state.over = True
     except Exception as e:
-        # 详细错误报告，方便排查模型名问题
-        st.error(f"📡 API 报错 ({m_id}): {str(e)}")
+        st.error(f"📡 API 访问异常 ({st.session_state.model}): {str(e)}")
 
-# 3. UI 交互流
-
+# 3. 游戏交互流程
 if not st.session_state.msgs:
-    # 修正模型 ID 以适配大多数 OpenAI 代理格式
+    st.write("---")
+    # 更新为你截图中的可用模型 ID
     st.session_state.model = st.radio(
         "🔮 选择挑战对象", 
-        ["gpt-4o", "gemini-1.5-pro", "gemini-2.0-flash-exp"], 
-        captions=["最强逻辑 (已确认可用)", "深度推理", "极速直觉"],
+        ["gemini-2.5-flash-lite", "gemini-2.5-pro", "gemini-3-pro-preview"], 
+        captions=["⚡ 极速对弈", "🧠 深度推理", "🔥 终极智商 (预览版)"],
         index=0
     )
     if st.button("🚀 开始游戏", use_container_width=True, type="primary"):
         with st.spinner("AI 正在同步思维..."):
             ask_ai()
-            if st.session_state.msgs: # 只有成功获取回复才刷新
-                st.rerun()
+            if st.session_state.msgs: st.rerun()
 
 elif not st.session_state.over:
     st.chat_message("assistant", avatar="🕵️").markdown(f"### {st.session_state.msgs[-1]['content']}")
@@ -101,6 +95,7 @@ elif not st.session_state.over:
 else:
     st.balloons()
     st.chat_message("assistant", avatar="🎯").markdown(f"### {st.session_state.msgs[-1]['content']}")
+    st.success("🎯 游戏结束，真相大白！")
     if st.button("🎮 再玩一局", use_container_width=True, type="primary"):
         st.session_state.msgs, st.session_state.over, st.session_state.count = [], False, 0
         st.rerun()
