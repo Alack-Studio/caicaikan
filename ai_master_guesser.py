@@ -176,4 +176,113 @@ if not st.session_state.started:
         "gemini-3-pro-preview": "🔥 究极算力<br>拥有顶级拟人直觉"
     }
     m_cols = st.columns(3)
-    for idx, (m_key, m_desc)
+    for idx, (m_key, m_desc) in enumerate(models_info.items()):
+        with m_cols[idx]:
+            if st.button(m_key.replace("gemini-",""), use_container_width=True, type="primary" if st.session_state.model == m_key else "secondary"):
+                st.session_state.model = m_key
+                st.rerun()
+            st.markdown(f'<p class="model-desc">{m_desc}</p>', unsafe_allow_html=True)
+            
+    st.write("---")
+    if st.button("⚡ 建立神经链接 (START)", use_container_width=True, type="primary"):
+        st.session_state.started = True
+        st.session_state.seed_category = "" 
+        
+        if st.session_state.role == "我猜":
+            ask_ai("请直接给我第一个提示。", hidden_trigger=True)
+        else:
+            ask_ai() 
+        st.rerun()
+
+# 场景二：游戏进行中
+else:
+    # 渲染历史消息 (过滤 hidden)
+    for m in st.session_state.msgs:
+        if m.get("hidden", False): continue 
+        
+        avatar = "🤖" if m["role"] == "assistant" else "👤"
+        if st.session_state.role == "AI 猜" and m["role"] == "assistant": avatar = "🕵️"
+        
+        with st.chat_message(m["role"], avatar=avatar):
+            st.markdown(m["content"])
+
+    if not st.session_state.over:
+        st.write("") 
+        
+        if st.session_state.role == "AI 猜":
+            col1, col2, col3 = st.columns(3)
+            if col1.button("✅ 是", use_container_width=True): st.session_state.pending = "是的"; st.rerun()
+            if col2.button("❌ 否", use_container_width=True): st.session_state.pending = "不是"; st.rerun()
+            if col3.button("❔ 模糊", use_container_width=True): st.session_state.pending = "不确定"; st.rerun()
+            
+        else:
+            c1, c2, c3, c4 = st.columns([0.18, 0.22, 0.22, 0.38])
+            
+            with c1:
+                # 提示按钮：发送隐藏指令
+                if st.button("💡 提示"): 
+                    st.session_state.pending = f"我需要一个新的线索（外貌/成就/秘密），请直接说内容，不要废话。（第{st.session_state.count}次提问）"
+                    st.rerun()
+            with c2:
+                if st.button("🙅 猜不到"): 
+                    st.session_state.pending = "我想不出来了，请直接揭晓答案。"
+                    st.rerun()
+            with c3:
+                if st.button("🔄 换个人"):
+                    st.session_state.msgs = []
+                    st.session_state.count = 0
+                    st.session_state.seed_category = "" 
+                    if st.session_state.role == "我猜":
+                        st.session_state.pending = "请直接给我第一个提示。"
+                    else:
+                        ask_ai()
+                    st.rerun()
+            with c4:
+                if st.button("🏠 菜单"):
+                    st.session_state.started = False
+                    st.session_state.msgs = []
+                    st.session_state.over = False
+                    st.rerun()
+
+            user_input = st.chat_input("在此输入你的推理...")
+            if user_input:
+                ask_ai(user_input)
+                st.rerun()
+
+    else:
+        if st.session_state.win:
+            st.balloons()
+            title_text = "🎯 推理成功！"
+            color_style = "border:1px solid #00D2FF; background:rgba(0,210,255,0.05);"
+        else:
+            st.snow()
+            title_text = "❄️ 推理结束"
+            color_style = "border:1px solid #FF4B4B; background:rgba(255,75,75,0.05);"
+
+        st.markdown(f"""
+            <div style="text-align:center; padding:20px; border-radius:15px; margin:20px 0; {color_style}">
+                <h2 style="margin:0;">{title_text}</h2>
+                <p style="opacity:0.7; margin-top:10px;">本次耗时: {st.session_state.count} 轮交互</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("🎮 再来一局 (换人)", use_container_width=True, type="primary"):
+                st.session_state.msgs = []
+                st.session_state.over = False
+                st.session_state.win = False
+                st.session_state.count = 0
+                st.session_state.seed_category = "" 
+                
+                if st.session_state.role == "我猜":
+                    ask_ai("请直接给我第一个提示。", hidden_trigger=True)
+                else:
+                    ask_ai()
+                st.rerun()
+        with b2:
+            if st.button("🏠 返回大厅", use_container_width=True):
+                st.session_state.started = False
+                st.session_state.msgs = []
+                st.session_state.over = False
+                st.rerun()
