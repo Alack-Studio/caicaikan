@@ -22,7 +22,23 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. API 安全配置
+# 2. 状态全局初始化 (防止 AttributeError)
+# ==========================================
+# 这一步非常关键：确保所有变量在运行前都已存在
+init_values = {
+    "chat_session": None,
+    "game_over": False,
+    "question_count": 0,
+    "error_msg": None,
+    "current_question": "🔮 正在唤醒 AI 大脑..."
+}
+
+for key, value in init_values.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+# ==========================================
+# 3. API 配置
 # ==========================================
 if "GEMINI_API_KEY" not in st.secrets:
     st.error("🔑 请在 Streamlit 控制台配置 GEMINI_API_KEY")
@@ -30,8 +46,6 @@ if "GEMINI_API_KEY" not in st.secrets:
 
 API_KEY = "".join(st.secrets["GEMINI_API_KEY"].split())
 genai.configure(api_key=API_KEY)
-
-# 使用你列表中最稳的别名
 model = genai.GenerativeModel('models/gemini-flash-latest')
 
 def safe_send(chat, msg):
@@ -44,15 +58,10 @@ def safe_send(chat, msg):
         return None, err_msg
 
 # ==========================================
-# 3. 核心逻辑处理 (无 rerun 版)
+# 4. 回调函数处理逻辑
 # ==========================================
-
-# 按钮点击后的处理函数
 def handle_user_choice(ans_text):
-    # 增加计数
     st.session_state.question_count += 1
-    
-    # 调用 AI
     res, err = safe_send(st.session_state.chat_session, ans_text)
     
     if err == "LIMIT":
@@ -67,17 +76,14 @@ def handle_user_choice(ans_text):
         # 判定结束逻辑
         has_q = "?" in res or "？" in res
         is_guess = any(w in res for w in ["猜", "名字是", "他是", "我想到了"])
-        
         if not has_q or is_guess:
             st.session_state.game_over = True
 
-# 初始化会话
-if "chat_session" not in st.session_state:
+# ==========================================
+# 5. 首次启动 AI 会话
+# ==========================================
+if st.session_state.chat_session is None:
     st.session_state.chat_session = model.start_chat(history=[])
-    st.session_state.game_over = False
-    st.session_state.question_count = 0
-    st.session_state.error_msg = None
-    
     with st.spinner("🔮 正在连接 AI 大脑..."):
         prompt = "你现在是一个读心神算子。我心里想一个著名人物。你问是非题猜他是谁。请开始第一问。"
         res, err = safe_send(st.session_state.chat_session, prompt)
@@ -88,7 +94,7 @@ if "chat_session" not in st.session_state:
             st.stop()
 
 # ==========================================
-# 4. 界面渲染
+# 6. 界面渲染
 # ==========================================
 st.title("🕵️ AI 读心神算子")
 
@@ -97,32 +103,12 @@ with st.sidebar:
     st.write(f"步数：{st.session_state.question_count}")
     if st.button("🔄 重新开始", use_container_width=True):
         for k in list(st.session_state.keys()): del st.session_state[k]
-        st.rerun() # 这里的 rerun 是允许的，因为不在回调函数里
+        st.rerun()
 
-# 错误提示
-if st.session_state.error_msg:
+# 安全检查 error_msg
+if st.session_state.get("error_msg"):
     st.warning(st.session_state.error_msg)
 
 if not st.session_state.game_over:
-    # 展示 AI 问题
     st.chat_message("assistant", avatar="🔮").write(st.session_state.current_question)
-    
-    st.divider()
-    
-    # 交互按钮 (注意：不再需要 st.rerun()，回调结束后会自动刷新)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.button("✅ 是的", on_click=handle_user_choice, args=("是的",), use_container_width=True, type="primary")
-    with c2:
-        st.button("❌ 不是", on_click=handle_user_choice, args=("不是",), use_container_width=True)
-    with c3:
-        st.button("❔ 不确定", on_click=handle_user_choice, args=("不确定",), use_container_width=True)
-
-else:
-    st.balloons()
-    st.success("🎯 AI 锁定了答案！")
-    st.chat_message("assistant", avatar="🎯").write(st.session_state.current_question)
-    
-    if st.button("🎮 挑战下一局", use_container_width=True, type="primary"):
-        for k in list(st.session_state.keys()): del st.session_state[k]
-        st.rerun()
+    st.divider
