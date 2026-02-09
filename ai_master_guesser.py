@@ -2,7 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import random
 
-# 1. 极致赛博 UI：呼吸灯效果与强反馈布局
+# 1. 极致赛博 UI：呼吸灯效果与选关布局
 st.set_page_config(page_title="赛博侦探", layout="centered")
 st.markdown("<style>[data-testid='stSidebar'] {display: none;}</style>", unsafe_allow_html=True)
 
@@ -21,8 +21,6 @@ st.markdown(f"""
         100% {{ box-shadow: 0 0 4px rgba({glow_c}, 0.15); border-color: rgba({glow_c}, 0.3); }}
     }}
     .stApp {{ background-color: {bg}; color: {txt} !important; font-family: -apple-system, sans-serif; }}
-    
-    /* 选关按钮高亮 */
     div.stButton > button {{
         border-radius: 12px; height: 3.2em; font-size: 0.95rem !important;
         background-color: transparent; color: {txt} !important;
@@ -35,22 +33,18 @@ st.markdown(f"""
         animation: breathe 2s infinite ease-in-out;
         color: #00D2FF !important; font-weight: bold;
     }}
-
-    .model-desc {{ font-size: 0.8rem; color: {txt}; opacity: 0.6; text-align: center; margin-top: -10px; margin-bottom: 15px; }}
-
     .stChatMessage {{ 
         background-color: rgba(255,255,255,0.03) !important; border-radius: 10px; 
         padding: 10px; border: 0.6px solid rgba({glow_c}, 0.3); margin-bottom: 8px; 
         animation: breathe 4s infinite ease-in-out;
     }}
     header {{visibility: hidden;}}
-    .stSpinner p {{ font-size: 0.9rem; color: #00D2FF; }}
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🕵️ AI 猜猜看")
 
-# 2. 核心逻辑：强化胜利判定
+# 2. 核心逻辑：解决重复提示 & 强化胜利反馈
 client = OpenAI(api_key=st.secrets["API_KEY"], base_url="https://api.gptsapi.net/v1")
 
 def ask_ai(inp=None, is_start_trigger=False):
@@ -58,29 +52,31 @@ def ask_ai(inp=None, is_start_trigger=False):
         st.session_state.msgs.append({"role": "user", "content": inp})
         if not is_start_trigger: st.session_state.count += 1
     
-    with st.spinner("信号传输中..."):
+    with st.spinner("深度检索中..."):
         if st.session_state.role == "AI 猜":
-            sys = "你是一个猜谜助手。我心里想一个人物，你通过是非题来猜。请直接开始第一个问题，不要说任何废话。"
+            sys = "你是一个猜谜专家。我心里想一个著名人物，你通过是非题来猜。直接开始第一个问题，不要废话。"
         else:
-            # 强化 AI 的结算意识：当用户猜中时，必须触发特定词汇
-            sys = ("你已选定一个著名人物。收到第一个提示请求时直接给出分类提示。"
-                   "随后答'是/否/模糊'。如果用户猜中了该人物的名字，你必须回复'恭喜你，答对了！'并公布答案。"
-                   "若用户点击提示，提供性别、形象、粉丝群体等特征。")
+            # 解决 image_9277bf.png 的核心指令：严禁重复
+            sys = ("你已选定一个世界著名的现实或虚拟人物。用户提问你只答'是/否/模糊'。"
+                   "【关键：提示规则】当收到提示请求时，你必须提供一条全新的、不同于之前所有提示的信息。提示应循序渐进：从职业领域 -> 国籍/年代 -> 外貌特征 -> 代表作品。严禁复读。"
+                   "【关键：结束规则】如果用户猜对了名字，你必须回复'恭喜你，答对了！'并给出人物简介。")
             
         try:
-            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.7)
+            res = client.chat.completions.create(model=st.session_state.model, messages=[{"role":"system","content":sys}]+st.session_state.msgs, temperature=0.8)
             reply = res.choices[0].message.content
             st.session_state.msgs.append({"role":"assistant", "content":reply})
             
-            # 强化判定矩阵
-            win_keywords = ["恭喜", "答对了", "正确", "没错", "答案是", "真相是", "揭晓答案"]
-            if any(x in reply for x in win_keywords):
+            # 胜利判定：捕捉恭喜、正确等关键词
+            win_tags = ["恭喜", "答对了", "正确", "没错", "答案是", "真相是"]
+            if any(t in reply for t in win_tags):
                 st.session_state.over = True
-                # 在“我猜”模式下，且非认输情况下，判定为真正胜利
-                if st.session_state.role == "我猜" and "揭晓答案" not in inp:
+                if st.session_state.role == "我猜" and "揭晓答案" not in str(inp):
                     st.session_state.win = True
                 elif st.session_state.role == "AI 猜":
-                    st.session_state.win = True # AI 猜中也视为完成
+                    st.session_state.win = True
+            elif "揭晓答案" in str(inp): # 认输判定
+                st.session_state.over = True
+                st.session_state.win = False
         except Exception as e: st.error(f"📡 API 异常: {str(e)}")
 
 if st.session_state.pending:
@@ -110,7 +106,7 @@ if not st.session_state.msgs:
             is_sel = st.session_state.model == m_id
             if st.button(m_id.replace("gemini-",""), use_container_width=True, type="primary" if is_sel else "secondary"):
                 st.session_state.model = m_id; st.rerun()
-            st.markdown(f'<p class="model-desc">{descs[m_id]}</p>', unsafe_allow_html=True)
+            st.markdown(f'<p style="font-size:0.8rem; text-align:center; opacity:0.6;">{descs[m_id]}</p>', unsafe_allow_html=True)
     
     st.write("---")
     if st.button("🚀 开始推理", use_container_width=True, type="primary"):
@@ -119,9 +115,9 @@ if not st.session_state.msgs:
         st.rerun()
 
 else:
-    # 如果已结束，且是胜利，顶部显示勋章
+    # 顶部状态显示
     if st.session_state.over and st.session_state.win:
-        st.success("🏆 恭喜破案！推理成功")
+        st.success("🏆 逻辑闭环：破案成功！")
 
     for m in st.session_state.msgs:
         if m["content"] == "请直接给我第一个提示。": continue
@@ -138,7 +134,8 @@ else:
         else:
             qc1, qc2, qc3, qc4 = st.columns([0.18, 0.22, 0.22, 0.38])
             with qc1: 
-                if st.button("💡 提示"): st.session_state.pending = "提示一下，比如性别、形象或者特点？"; st.rerun()
+                if st.button("💡 提示"): 
+                    st.session_state.pending = f"请提供一个不同于之前的提示（当前已提问{st.session_state.count}次）。"; st.rerun()
             with qc2: 
                 if st.button("🙅 猜不到"): st.session_state.pending = "我想不出来了，请直接揭晓答案。"; st.rerun()
             with qc3: 
@@ -150,11 +147,10 @@ else:
             q = st.chat_input("输入你的推理提问...")
             if q: ask_ai(q); st.rerun()
     else:
-        # 胜利气球 vs 失败雪花
         if st.session_state.win: st.balloons()
         else: st.snow()
         
-        st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>{"🎯 推理成功" if st.session_state.win else "❄️ 遗憾结束"}</h3><p>本次推理共消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align:center; padding:15px; border-radius:12px; border:1px solid #00D2FF; background:rgba(0,210,255,0.03); margin:20px 0;"><h3>{"🎯 推理成功" if st.session_state.win else "❄️ 挑战结束"}</h3><p>本次推理消耗: {st.session_state.count} 轮</p></div>', unsafe_allow_html=True)
         
         if st.button("🎮 换个人重新猜", use_container_width=True, type="primary"):
             st.session_state.msgs, st.session_state.over, st.session_state.win, st.session_state.count = [], False, False, 0
